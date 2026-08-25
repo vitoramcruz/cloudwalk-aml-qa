@@ -52,14 +52,18 @@ for script in "${SCRIPTS[@]}"; do
   DEST="$WORK_DIR/$script"
   cp "$SRC" "$DEST"
 
-  # Patch any hardcoded absolute input path to point at our workbook.
+  # Patch any hardcoded absolute input path to point at our workbook, and
+  # any hardcoded /mnt/user-data/outputs reference (with OR without a
+  # trailing slash / filename after it — both forms appear across the
+  # scripts) to point at our local, writable workspace instead.
   python3 - "$DEST" "$WORKBOOK_ABS" <<'PYEOF'
-import re, sys
+import os, re, sys
 dest, workbook = sys.argv[1], sys.argv[2]
 with open(dest, encoding="utf-8") as f:
     content = f.read()
 content = re.sub(r'INPUT_FILE\s*=\s*"[^"]*\.xlsx"', f'INPUT_FILE = "{workbook}"', content)
-content = re.sub(r'"/mnt/user-data/outputs/', f'"{__import__("os").getcwd()}/qa_workspace/outputs/', content)
+local_outputs = os.path.join(os.getcwd(), "qa_workspace", "outputs")
+content = content.replace("/mnt/user-data/outputs", local_outputs)
 with open(dest, "w", encoding="utf-8") as f:
     f.write(content)
 PYEOF
