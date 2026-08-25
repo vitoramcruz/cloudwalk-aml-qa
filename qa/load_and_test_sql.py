@@ -23,7 +23,7 @@ from sqlalchemy import create_engine, text
 # CONFIG — adjust these two lines if your filenames differ
 # ---------------------------------------------------------------------------
 WORKBOOK_GLOB = "case_files/*.xlsx"
-SQL_FILE_GLOB = "case_files/*SQL_Detection_Queries*.sql"
+SQL_FILE_GLOB = "case_files/*.sql"
 
 SHEET_TO_TABLE = {
     "Transactions": "transactions",
