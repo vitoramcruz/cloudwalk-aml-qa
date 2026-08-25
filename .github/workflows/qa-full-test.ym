@@ -1,0 +1,99 @@
+name: CloudWalk AML Case — Full QA
+
+# Runs entirely on GitHub's cloud servers. Nothing is installed on your
+# computer. Two ways to start it:
+#   1) Click "Run workflow" on the Actions tab (manual button).
+#   2) Automatically, every time you push a change to the "main" branch.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  full-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # A real PostgreSQL 16 server, provided by GitHub for the duration of
+    # this run only. It's gone the moment the job finishes.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: aml_qa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: aml_qa
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r case_files/requirements.txt
+          pip install sqlalchemy psycopg2-binary playwright pytest
+
+      - name: Install headless browser (for the Streamlit app check)
+        run: playwright install --with-deps chromium
+
+      - name: Run the standalone Python scripts
+        run: |
+          chmod +x qa/run_python_scripts.sh
+          bash qa/run_python_scripts.sh
+
+      - name: Load dataset into PostgreSQL and run every SQL query
+        run: python qa/load_and_test_sql.py
+
+      - name: Launch the Streamlit app and check every tab
+        run: python qa/test_app.py
+
+      - name: Build the final combined report
+        if: always()
+        run: |
+          mkdir -p qa_reports
+          {
+            echo "# CloudWalk AML Case — Full QA Report"
+            echo ""
+            echo "Run: ${{ github.run_number }} — $(date -u +'%Y-%m-%d %H:%M UTC')"
+            echo ""
+            echo "---"
+            echo ""
+            cat qa_reports/python_report.md 2>/dev/null || echo "_(python report missing)_"
+            echo ""
+            echo "---"
+            echo ""
+            cat qa_reports/sql_report.md 2>/dev/null || echo "_(sql report missing)_"
+            echo ""
+            echo "---"
+            echo ""
+            cat qa_reports/app_report.md 2>/dev/null || echo "_(app report missing)_"
+          } > qa_reports/FULL_REPORT.md
+
+      # This is what shows up as a downloadable .zip on the run's summary
+      # page — reports, logs, and dashboard screenshots, even if a step failed.
+      - name: Upload the report as a downloadable artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-report
+          path: qa_reports/
+          retention-days: 30
